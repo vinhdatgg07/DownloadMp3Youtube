@@ -59,6 +59,35 @@ sudo apt update
 sudo apt install ffmpeg
 ```
 
+## 🍪 Setup Cookies (KHUYẾN NGHỊ - Làm 1 lần)
+
+Để tránh lỗi bot detection và tăng độ ổn định, **NÊN export cookies** trước khi sử dụng:
+
+### **Cách 1: Dùng Extension (2 phút - DỄ NHẤT ⭐)**
+```
+1. Cài extension "Get cookies.txt LOCALLY" trên Chrome/Edge
+2. Vào youtube.com → Đăng nhập
+3. Click extension → Export → Lưu youtube_cookies.txt
+4. Copy file vào thư mục tool
+5. XONG! Tool tự động dùng cookies từ file
+```
+
+### **Cách 2: Dùng script tự động (3 phút)**
+```bash
+pip install browser-cookie3
+python export_cookies.py
+```
+
+**→ Hướng dẫn chi tiết:** [EXPORT_COOKIES.md](EXPORT_COOKIES.md) | [NHANH_EXPORT_COOKIES.txt](NHANH_EXPORT_COOKIES.txt)
+
+**Lợi ích:**
+- ✅ Không bị lỗi DPAPI / Chrome locked / Bot detection
+- ✅ Không cần đóng trình duyệt khi chạy tool
+- ✅ Ổn định nhất (cookies dùng được 30-90 ngày)
+- ✅ Setup 1 lần, dùng mãi mãi!
+
+---
+
 ## 🚀 Cách sử dụng
 
 Tool hỗ trợ **2 chế độ**: Interactive (nhập URL sau khi chạy) và Command Line (truyền URL trực tiếp).
@@ -412,8 +441,29 @@ Bạn có thể chỉnh sửa các tham số trong file `download_youtube_mp3.py
 - Bị rate limit (tải quá nhiều)
 - Chờ 1-2 giờ rồi thử lại hoặc dùng VPN
 
+#### ❌ ERROR: Sign in to confirm you're not a bot
+- **YouTube phát hiện bot, yêu cầu xác thực**
+- **Giải pháp:** Tool tự động lấy cookies từ trình duyệt (Chrome/Edge/Firefox)
+- Đảm bảo đã đăng nhập YouTube trên trình duyệt
+- Xem chi tiết: [HUONG_DAN_KHAC_PHUC_LOI.md](HUONG_DAN_KHAC_PHUC_LOI.md)
+
+#### ❌ ERROR: Failed to decrypt with DPAPI
+- **Chrome 127+ đã nâng cấp mã hóa cookies**
+- **Giải pháp 1:** Dùng Edge/Firefox thay vì Chrome (ít bị lỗi)
+- **Giải pháp 2:** Cài `pip install pycryptodomex`
+- Xem chi tiết: [LOI_DPAPI_VA_CACH_KHAC_PHUC.md](LOI_DPAPI_VA_CACH_KHAC_PHUC.md)
+
+#### ❌ ERROR: Could not copy Chrome cookie database
+- **Chrome đang mở và khóa file cookies**
+- **Giải pháp nhanh:** Chạy `dong_chrome_va_chay.bat` (tự động đóng Chrome)
+- **Giải pháp thủ công:** Đóng Chrome hoàn toàn hoặc dùng Edge/Firefox
+- Xem chi tiết: [LOI_CHROME_LOCKED.md](LOI_CHROME_LOCKED.md)
+
 ### 📖 Xem thêm:
-Xem file [TROUBLESHOOTING.md](TROUBLESHOOTING.md) để biết chi tiết về tất cả các lỗi và cách khắc phục!
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Tất cả lỗi thường gặp
+- [HUONG_DAN_KHAC_PHUC_LOI.md](HUONG_DAN_KHAC_PHUC_LOI.md) - Lỗi bot detection
+- [LOI_DPAPI_VA_CACH_KHAC_PHUC.md](LOI_DPAPI_VA_CACH_PHUC.md) - Lỗi DPAPI
+- [LOI_CHROME_LOCKED.md](LOI_CHROME_LOCKED.md) - Lỗi Chrome locked
 
 ## 📝 Lưu ý
 

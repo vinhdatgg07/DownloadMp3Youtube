@@ -16,9 +16,49 @@ import time
 import queue
 import subprocess
 import shutil
+import platform
 
 # Khởi tạo colorama cho Windows
 init(autoreset=True)
+
+
+def close_browser(browser_name):
+    """
+    Đóng trình duyệt đang chạy để giải phóng cookies database
+    
+    Args:
+        browser_name (str): Tên trình duyệt ('chrome', 'edge', 'firefox', etc.)
+    
+    Returns:
+        bool: True nếu đóng thành công, False nếu không
+    """
+    try:
+        system = platform.system()
+        
+        if system == 'Windows':
+            process_names = {
+                'chrome': 'chrome.exe',
+                'edge': 'msedge.exe',
+                'firefox': 'firefox.exe',
+                'brave': 'brave.exe',
+                'opera': 'opera.exe',
+            }
+            
+            exe_name = process_names.get(browser_name.lower())
+            if not exe_name:
+                return False
+            
+            # Đóng tiến trình
+            cmd = f'taskkill /F /IM {exe_name} /T 2>nul'
+            result = subprocess.run(cmd, shell=True, capture_output=True)
+            
+            return result.returncode == 0
+        
+        # Chưa hỗ trợ macOS/Linux
+        return False
+        
+    except Exception:
+        return False
 
 
 def check_ytdlp_version():
@@ -95,7 +135,7 @@ def check_disk_space(path, required_gb=2.0):
 class YouTubePlaylistDownloader:
     """Class để tải playlist YouTube và chuyển đổi sang MP3"""
     
-    def __init__(self, output_dir="downloads", keep_original=False, max_workers=10):
+    def __init__(self, output_dir="downloads", keep_original=False, max_workers=10, cookies_file=None):
         """
         Khởi tạo downloader với 2-pipeline architecture
         
@@ -103,11 +143,13 @@ class YouTubePlaylistDownloader:
             output_dir (str): Thư mục lưu file MP3 (mặc định: 'downloads')
             keep_original (bool): Giữ file gốc (webm/m4a) ngoài MP3 (mặc định: False)
             max_workers (int): Số thread convert song song (mặc định: 10)
+            cookies_file (str): Đường dẫn file cookies (tùy chọn)
         """
         self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(exist_ok=True)
         self.keep_original = keep_original
         self.max_workers = max_workers
+        self.cookies_file = cookies_file
         
         # Counters (thread-safe)
         self.downloaded_count = 0  # Số file đã tải xong (chưa convert)
@@ -244,6 +286,129 @@ class YouTubePlaylistDownloader:
             except Exception as e:
                 print(f"{Fore.RED}✗ Lỗi worker: {str(e)}")
     
+    def _check_cookies_file(self):
+        """
+        Kiểm tra xem có file cookies không
+        
+        Returns:
+            bool: True nếu tìm thấy file cookies hợp lệ
+        """
+        # Danh sách file cookies có thể có
+        possible_files = [
+            'youtube_cookies.txt',
+            'cookies.txt',
+            'youtube.txt',
+        ]
+        
+        # Nếu user chỉ định file cookies cụ thể
+        if self.cookies_file:
+            possible_files.insert(0, self.cookies_file)
+        
+        for cookie_file in possible_files:
+            cookie_path = Path(cookie_file)
+            
+            # Kiểm tra file tồn tại
+            if cookie_path.exists() and cookie_path.is_file():
+                # Kiểm tra file không rỗng
+                if cookie_path.stat().st_size > 0:
+                    print(f"{Fore.GREEN}🍪 Tìm thấy file cookies: {Style.BRIGHT}{cookie_file}")
+                    print(f"{Fore.CYAN}   → Sẽ sử dụng cookies từ file!")
+                    print(f"{Fore.GREEN}   ✓ Không cần lấy cookies từ trình duyệt")
+                    self.cookies_file = str(cookie_path)
+                    return True
+        
+        # Không tìm thấy file cookies
+        return False
+    
+    def _get_browser_cookies(self):
+        """
+        Tự động phát hiện và lấy cookies từ các trình duyệt
+        
+        Returns:
+            tuple hoặc None: ('browser_name',) nếu tìm thấy, None nếu không
+        """
+        # Edge trước vì ít bị lỗi DPAPI hơn Chrome
+        browsers = ['edge', 'firefox', 'chrome', 'brave', 'opera']
+        
+        print(f"{Fore.CYAN}🍪 Đang tìm cookies từ trình duyệt...")
+        
+        chrome_locked = False
+        
+        for browser in browsers:
+            try:
+                # Test THỰC SỰ bằng cách extract info từ một video YouTube test
+                test_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'cookiesfrombrowser': (browser,),
+                    'extract_flat': False,
+                }
+                
+                # Test với một video ngắn public
+                test_url = 'https://www.youtube.com/watch?v=jNQXAC9IVRw'  # Me at the zoo - video đầu tiên của YouTube
+                
+                with yt_dlp.YoutubeDL(test_opts) as ydl:
+                    # Thử extract info thực sự (không download)
+                    ydl.extract_info(test_url, download=False)
+                
+                print(f"{Fore.GREEN}   ✓ Cookies từ {browser.title()} hoạt động!")
+                return (browser,)
+            except Exception as e:
+                # Hiển thị lỗi để người dùng biết
+                error_msg = str(e).lower()
+                
+                if 'dpapi' in error_msg or 'decrypt' in error_msg:
+                    print(f"{Fore.YELLOW}   ✗ {browser.title()}: Lỗi giải mã cookies (DPAPI)")
+                elif 'could not copy' in error_msg or 'database' in error_msg:
+                    print(f"{Fore.YELLOW}   ✗ {browser.title()}: Đang mở (file cookies bị khóa)")
+                    
+                    # Hỏi có muốn tự động đóng không
+                    print(f"{Fore.CYAN}      💡 Tự động đóng {browser.title()} và thử lại?")
+                    choice = input(f"{Fore.WHITE}      Đóng {browser.title()}? (Y/n): {Style.BRIGHT}").strip().lower()
+                    
+                    if choice in ['', 'y', 'yes', 'có']:
+                        print(f"{Fore.CYAN}      → Đang đóng {browser.title()}...")
+                        if close_browser(browser):
+                            print(f"{Fore.GREEN}      ✓ Đã đóng {browser.title()}!")
+                            print(f"{Fore.CYAN}      → Thử lại...")
+                            
+                            # Thử lại sau khi đóng
+                            try:
+                                time.sleep(1)  # Chờ file unlock
+                                with yt_dlp.YoutubeDL(test_opts) as ydl:
+                                    ydl.extract_info(test_url, download=False)
+                                print(f"{Fore.GREEN}   ✓ Cookies từ {browser.title()} hoạt động!")
+                                return (browser,)
+                            except Exception as retry_error:
+                                retry_msg = str(retry_error).lower()
+                                if 'could not copy' in retry_msg:
+                                    print(f"{Fore.YELLOW}      ✗ Vẫn bị khóa, thử trình duyệt khác...")
+                                else:
+                                    print(f"{Fore.YELLOW}      ✗ Vẫn lỗi, thử trình duyệt khác...")
+                        else:
+                            print(f"{Fore.YELLOW}      ✗ Không thể đóng tự động")
+                    
+                    if browser == 'chrome':
+                        chrome_locked = True
+                else:
+                    # Lỗi khác, không hiển thị
+                    pass
+                continue
+        
+        print(f"{Fore.YELLOW}   ⚠ Không tìm thấy cookies hợp lệ")
+        print(f"{Fore.CYAN}   💡 Giải pháp:")
+        
+        if chrome_locked:
+            print(f"{Fore.CYAN}      1. ĐÓNG TẤT CẢ TRÌNH DUYỆT CHROMIUM (Chrome, Edge, Brave)")
+            print(f"{Fore.CYAN}      2. Hoặc chạy: {Style.BRIGHT}dong_chrome_va_chay.bat")
+            print(f"{Fore.CYAN}      3. Hoặc dùng Firefox (không bị lỗi này)")
+        else:
+            print(f"{Fore.CYAN}      1. Đăng nhập YouTube trên Edge/Firefox")
+            print(f"{Fore.CYAN}      2. ĐÓNG trình duyệt trước khi chạy tool")
+            print(f"{Fore.CYAN}      3. Hoặc thử không dùng cookies (có thể bị giới hạn)")
+        
+        return None
+    
     def download_playlist(self, playlist_url):
         """
         Tải playlist YouTube với 2-pipeline architecture
@@ -255,8 +420,18 @@ class YouTubePlaylistDownloader:
         print(f"{Fore.CYAN}🎵 Tool Tải MP3 từ YouTube Playlist 🎵")
         print(f"{Fore.CYAN}{'='*60}\n")
         
+        # QUAN TRỌNG: Ưu tiên KHÔNG dùng cookies vì iOS/Android client tốt hơn!
+        print(f"{Fore.YELLOW}💡 Lưu ý: YouTube đã thay đổi, client Android/iOS (không cookies) ổn định hơn!")
+        print(f"{Fore.CYAN}   Tool sẽ dùng Android client (không cần cookies, không cần Node.js)")
+        print()
+        
+        # Không dùng cookies nữa để tránh xung đột
+        cookies_from_file = False
+        browser_cookies = None
+        
         # Cấu hình yt-dlp - CHỈ TẢI, KHÔNG CONVERT
         ydl_opts = {
+            # Android client trả về format opus/m4a/webm
             'format': 'bestaudio/best',
             'outtmpl': str(self.output_dir / '%(playlist_index)s - %(title)s.%(ext)s'),
             'download_archive': str(self.download_archive),
@@ -271,6 +446,15 @@ class YouTubePlaylistDownloader:
             'extractor_retries': 5,
             'file_access_retries': 3,
             'throttledratelimit': 100000,
+            
+            # ✅ FIX: Dùng Android client - Ổn định nhất, không cần cookies, không cần Node.js
+            # Android client trả về format m4a/webm sẵn, không bị SABR streaming
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android'],  # Chỉ Android, đơn giản nhất
+                }
+            },
+            
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -278,6 +462,9 @@ class YouTubePlaylistDownloader:
                 'Sec-Fetch-Mode': 'navigate',
             },
         }
+        
+        # KHÔNG dùng cookies để tương thích với Android client
+        print(f"{Fore.GREEN}✓ Sử dụng Android client (không cần cookies)")
         
         try:
             print(f"{Fore.YELLOW}📥 Khởi động 2-Pipeline...\n")
